@@ -33,6 +33,7 @@ app.get('/', (req, res) => {
 app.get('/test-film', async (req, res) => {
     try {
         const genreComedie = 35;
+        const pageAleatoire = Math.floor(Math.random() * 100) + 1;
 
         const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
             headers: {
@@ -40,11 +41,17 @@ app.get('/test-film', async (req, res) => {
             },
             params: {
                 language: 'fr-FR',
-                with_genres: genreComedie
+                with_genres: genreComedie,
+                page: pageAleatoire,
+                'vote_count.gte': 20,
+                'vote_average.gte': 1
+
             }
         });
 
-        const film = response.data.results[0];
+        const films = response.data.results;
+        const indexAleatoire = Math.floor(Math.random() * films.length);
+        const film = films[indexAleatoire];
 
         const filmFormate = {
             id: film.id,
