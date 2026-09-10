@@ -31,42 +31,52 @@ app.get('/', (req, res) => {
 });
 
 app.get('/test-film', async (req, res) => {
-    try {
-        const genreComedie = 35;
-        const pageAleatoire = Math.floor(Math.random() * 100) + 1;
+  try {
+    const genre = req.query.genre || '35';
+    let films = [];
+    let tentatives = 0;
 
-        const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
-            headers: {
-                Authorization: `Bearer ${process.env.TMDB_TOKEN}`
-            },
-            params: {
-                language: 'fr-FR',
-                with_genres: genreComedie,
-                page: pageAleatoire,
-                'vote_count.gte': 20,
-                'vote_average.gte': 1
+    while (films.length === 0 && tentatives < 5) {
+      const pageAleatoire = Math.floor(Math.random() * 100) + 1;
 
-            }
-        });
+      const response = await axios.get('https://api.themoviedb.org/3/discover/movie', {
+        headers: {
+          Authorization: `Bearer ${process.env.TMDB_TOKEN}`
+        },
+        params: {
+          language: 'fr-FR',
+          with_genres: genre,
+          page: pageAleatoire,
+          'vote_count.gte': 20,
+          'vote_average.gte': 1
+        }
+      });
 
-        const films = response.data.results;
-        const indexAleatoire = Math.floor(Math.random() * films.length);
-        const film = films[indexAleatoire];
-
-        const filmFormate = {
-            id: film.id,
-            title: film.title,
-            year: film.release_date.slice(0, 4),
-            overview: film.overview,
-            posterUrl: `https://image.tmdb.org/t/p/w500${film.poster_path}`,
-            genres: film.genre_ids.map(id => genresTMDB[id]),
-            rating: film.vote_average / 2
-        };
-
-        res.json(filmFormate);
-    } catch (error) {
-        res.status(500).json({ error: 'Erreur lors de l\'appel à TMDB' });
+      films = response.data.results;
+      tentatives++;
     }
+
+    if (films.length === 0) {
+      return res.status(404).json({ error: 'Aucun film trouvé après plusieurs essais' });
+    }
+
+    const indexAleatoire = Math.floor(Math.random() * films.length);
+    const film = films[indexAleatoire];
+
+    const filmFormate = {
+      id: film.id,
+      title: film.title,
+      year: film.release_date.slice(0, 4),
+      overview: film.overview,
+      posterUrl: `https://image.tmdb.org/t/p/w500${film.poster_path}`,
+      genres: film.genre_ids.map(id => genresTMDB[id]),
+      rating: film.vote_average / 2
+    };
+
+    res.json(filmFormate);
+  } catch (error) {
+    res.status(500).json({ error: 'Erreur lors de l\'appel à TMDB' });
+  }
 });
 
 app.listen(PORT, () => {
