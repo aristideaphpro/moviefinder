@@ -50,6 +50,7 @@ app.get('/lot-de-films', async (req, res) => {
     const noteMin = req.query.noteMin ? parseFloat(req.query.noteMin) * 2 : 0;
     const noteMax = req.query.noteMax ? parseFloat(req.query.noteMax) * 2 : 10;
     const tailleLot = 10;
+    const idsExclus = req.query.exclure ? req.query.exclure.split(',').map(Number) : [];
 
     if (!mood) {
       return res.status(400).json({ error: 'Mood inconnu' });
@@ -58,39 +59,56 @@ app.get('/lot-de-films', async (req, res) => {
     const genresString = mood.genres.join('|');
     const keywordsString = mood.keywords.join('|');
 
+    const pagesAleatoires = [];
+    for (let i = 0; i < 6; i++) {
+      pagesAleatoires.push(Math.floor(Math.random() * 50) + 1);
+    }
+
+    const appelsGenres = pagesAleatoires.map(page =>
+      axios.get('https://api.themoviedb.org/3/discover/movie', {
+        headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
+        params: {
+          language: 'fr-FR',
+          with_genres: genresString,
+          page: page,
+          'vote_count.gte': 10,
+          'vote_average.gte': noteMin,
+          'vote_average.lte': noteMax
+        }
+      })
+    );
+
+    const appelsKeywords = pagesAleatoires.map(page =>
+      axios.get('https://api.themoviedb.org/3/discover/movie', {
+        headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
+        params: {
+          language: 'fr-FR',
+          with_keywords: keywordsString,
+          page: page,
+          'vote_count.gte': 10,
+          'vote_average.gte': noteMin,
+          'vote_average.lte': noteMax
+        }
+      })
+    );
+
+    const toutesLesReponses = await Promise.all([...appelsGenres, ...appelsKeywords]);
+
     let candidats = [];
-    let tentativesPage = 0;
+    for (const reponse of toutesLesReponses) {
+      candidats = [...candidats, ...reponse.data.results];
+    }
 
-    while (candidats.length === 0 && tentativesPage < 5) {
-      const pageAleatoire = Math.floor(Math.random() * 50) + 1;
+    const idsVus = new Set();
+candidats = candidats.filter(film => {
+  if (idsVus.has(film.id)) return false;
+  if (idsExclus.includes(film.id)) return false;
+  idsVus.add(film.id);
+  return true;
+});
 
-      const [reponseGenres, reponseKeywords] = await Promise.all([
-        axios.get('https://api.themoviedb.org/3/discover/movie', {
-          headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-          params: {
-            language: 'fr-FR',
-            with_genres: genresString,
-            page: pageAleatoire,
-            'vote_count.gte': 10,
-            'vote_average.gte': noteMin,
-            'vote_average.lte': noteMax
-          }
-        }),
-        axios.get('https://api.themoviedb.org/3/discover/movie', {
-          headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-          params: {
-            language: 'fr-FR',
-            with_keywords: keywordsString,
-            page: pageAleatoire,
-            'vote_count.gte': 10,
-            'vote_average.gte': noteMin,
-            'vote_average.lte': noteMax
-          }
-        })
-      ]);
-
-      candidats = [...reponseGenres.data.results, ...reponseKeywords.data.results];
-      tentativesPage++;
+    if (candidats.length === 0) {
+      return res.status(404).json({ error: 'Aucun film trouvé pour ces critères' });
     }
 
     candidats = candidats.sort(() => Math.random() - 0.5);
@@ -127,6 +145,7 @@ app.get('/lot-de-films', async (req, res) => {
 
     res.json(lotFinal);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Erreur lors de l\'appel à TMDB' });
   }
 });
