@@ -106,10 +106,13 @@ app.get('/test-film', async (req, res) => {
   }
 });
 
-app.get('/film-par-mood', async (req, res) => {
+app.get('/lot-de-films', async (req, res) => {
   try {
     const moodChoisi = req.query.mood;
     const mood = moodsTMDB[moodChoisi];
+    const dureeMax = req.query.dureeMax ? parseInt(req.query.dureeMax) : null;
+    const dureeMin = req.query.dureeMin ? parseInt(req.query.dureeMin) : null;
+    const tailleLot = 10;
 
     if (!mood) {
       return res.status(400).json({ error: 'Mood inconnu' });
@@ -117,7 +120,6 @@ app.get('/film-par-mood', async (req, res) => {
 
     const genresString = mood.genres.join('|');
     const keywordsString = mood.keywords.join('|');
-
     const pageAleatoire = Math.floor(Math.random() * 50) + 1;
 
     const [reponseGenres, reponseKeywords] = await Promise.all([
@@ -143,44 +145,42 @@ app.get('/film-par-mood', async (req, res) => {
       })
     ]);
 
-    const films = [...reponseGenres.data.results, ...reponseKeywords.data.results];
+    let candidats = [...reponseGenres.data.results, ...reponseKeywords.data.results];
+    candidats = candidats.sort(() => Math.random() - 0.5);
 
-    if (films.length === 0) {
-      return res.status(404).json({ error: 'Aucun film trouvé pour ce mood' });
+    const lotFinal = [];
+
+    for (const candidat of candidats) {
+      if (lotFinal.length >= tailleLot) break;
+
+      const reponseDetail = await axios.get(`https://api.themoviedb.org/3/movie/${candidat.id}`, {
+        headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
+        params: { language: 'fr-FR' }
+      });
+
+      const filmDetail = reponseDetail.data;
+      const runtime = filmDetail.runtime;
+
+      const respecteMin = dureeMin ? runtime >= dureeMin : true;
+      const respecteMax = dureeMax ? runtime <= dureeMax : true;
+
+      if (respecteMin && respecteMax) {
+        lotFinal.push({
+          id: filmDetail.id,
+          title: filmDetail.title,
+          year: filmDetail.release_date.slice(0, 4),
+          overview: filmDetail.overview,
+          posterUrl: `https://image.tmdb.org/t/p/w500${filmDetail.poster_path}`,
+          runtime: filmDetail.runtime,
+          genres: filmDetail.genres.map(g => g.name),
+          rating: filmDetail.vote_average / 2
+        });
+      }
     }
 
-    const indexAleatoire = Math.floor(Math.random() * films.length);
-    const film = films[indexAleatoire];
-
-    const filmFormate = {
-      id: film.id,
-      title: film.title,
-      year: film.release_date.slice(0, 4),
-      overview: film.overview,
-      posterUrl: `https://image.tmdb.org/t/p/w500${film.poster_path}`,
-      genres: film.genre_ids.map(id => genresTMDB[id]),
-      rating: film.vote_average / 2
-    };
-
-    res.json(filmFormate);
+    res.json(lotFinal);
   } catch (error) {
     res.status(500).json({ error: 'Erreur lors de l\'appel à TMDB' });
-  }
-});
-
-app.get('/test-keyword', async (req, res) => {
-  try {
-    const response = await axios.get('https://api.themoviedb.org/3/search/keyword', {
-      headers: {
-        Authorization: `Bearer ${process.env.TMDB_TOKEN}`
-      },
-      params: {
-        query: req.query.q
-      }
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la recherche du mot-clé' });
   }
 });
 
