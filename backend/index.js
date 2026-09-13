@@ -1,10 +1,15 @@
 require('dotenv').config();
 const express = require('express');
-const axios = require('axios');
 const cors = require('cors');
+const { Pool } = require('pg');
 const app = express();
 app.use(cors());
 const PORT = 3000;
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
 const genresTMDB = {
     28: "Action",
@@ -46,150 +51,89 @@ app.get('/lot-de-films', async (req, res) => {
     const moodChoisi = req.query.mood;
     const moodEstLibre = !moodChoisi || moodChoisi === 'peuImporte';
     const mood = moodEstLibre ? null : moodsTMDB[moodChoisi];
-    const dureeMax = req.query.dureeMax ? parseInt(req.query.dureeMax) : null;
-    const dureeMin = req.query.dureeMin ? parseInt(req.query.dureeMin) : null;
-    const filtreDureeActif = dureeMax !== null || dureeMin !== null;
-    const noteMin = req.query.noteMin ? parseFloat(req.query.noteMin) * 2 : 0;
-    const noteMax = req.query.noteMax ? parseFloat(req.query.noteMax) * 2 : 10;
-    const tailleLot = 10;
-    const idsExclus = req.query.exclure ? req.query.exclure.split(',').map(Number) : [];
 
     if (!moodEstLibre && !mood) {
       return res.status(400).json({ error: 'Mood inconnu' });
     }
 
-    const pagesAleatoires = [];
-    for (let i = 0; i < 3; i++) {
-      pagesAleatoires.push(Math.floor(Math.random() * 50) + 1);
+    const dureeMax = req.query.dureeMax ? parseInt(req.query.dureeMax) : null;
+    const dureeMin = req.query.dureeMin ? parseInt(req.query.dureeMin) : null;
+    const noteMin = req.query.noteMin ? parseFloat(req.query.noteMin) : 0;
+    const noteMax = req.query.noteMax ? parseFloat(req.query.noteMax) : 5;
+    const idsExclus = req.query.exclure ? req.query.exclure.split(',').map(Number) : [];
+    const plateformes = req.query.plateformes ? req.query.plateformes.split(',').filter(Boolean) : [];
+    const decennies = req.query.decennies ? req.query.decennies.split(',').map(Number) : [];
+    const popuMin = req.query.popuMin ? parseFloat(req.query.popuMin) : null;
+    const tailleLot = 10;
+
+    const conditions = ['rating >= $1', 'rating <= $2'];
+    const valeurs = [noteMin, noteMax];
+
+    if (dureeMin) {
+      valeurs.push(dureeMin);
+      conditions.push(`runtime >= $${valeurs.length}`);
+    }
+    if (dureeMax) {
+      valeurs.push(dureeMax);
+      conditions.push(`runtime <= $${valeurs.length}`);
+    }
+    if (idsExclus.length > 0) {
+      valeurs.push(idsExclus);
+      conditions.push(`id <> ALL($${valeurs.length})`);
+    }
+    if (!moodEstLibre) {
+      valeurs.push(mood.genres);
+      const indexGenres = valeurs.length;
+      valeurs.push(mood.keywords);
+      const indexKeywords = valeurs.length;
+      conditions.push(`(genre_ids && $${indexGenres}::int[] OR keyword_ids && $${indexKeywords}::int[])`);
+    }
+    if (plateformes.length > 0) {
+      valeurs.push(plateformes);
+      conditions.push(`platforms && $${valeurs.length}::text[]`);
+    }
+    if (decennies.length > 0) {
+      // Pour chaque décennie sélectionnée (ex. 1990), on construit "year >= 1990 AND year <= 1999"
+      const conditionsDecennies = decennies.map(debut => {
+        valeurs.push(debut);
+        const indexDebut = valeurs.length;
+        valeurs.push(debut + 9);
+        const indexFin = valeurs.length;
+        return `(year >= $${indexDebut} AND year <= $${indexFin})`;
+      });
+      conditions.push(`(${conditionsDecennies.join(' OR ')})`);
+    }
+    if (popuMin !== null) {
+      valeurs.push(popuMin);
+      conditions.push(`popularity >= $${valeurs.length}`);
     }
 
-    let appelsDiscover;
+    const requete = `
+      SELECT id, title, year, overview, poster_path, runtime, rating, genre_ids, platforms
+      FROM films
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY random()
+      LIMIT ${tailleLot}
+    `;
 
-    if (moodEstLibre) {
-      appelsDiscover = pagesAleatoires.map(page =>
-        axios.get('https://api.themoviedb.org/3/discover/movie', {
-          headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-          params: {
-            language: 'fr-FR',
-            page: page,
-            'vote_count.gte': 10,
-            'vote_average.gte': noteMin,
-            'vote_average.lte': noteMax
-          }
-        }).catch(() => null)
-      );
-    } else {
-      const genresString = mood.genres.join('|');
-      const keywordsString = mood.keywords.join('|');
+    const resultat = await pool.query(requete, valeurs);
 
-      const appelsGenres = pagesAleatoires.map(page =>
-        axios.get('https://api.themoviedb.org/3/discover/movie', {
-          headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-          params: {
-            language: 'fr-FR',
-            with_genres: genresString,
-            page: page,
-            'vote_count.gte': 10,
-            'vote_average.gte': noteMin,
-            'vote_average.lte': noteMax
-          }
-        }).catch(() => null)
-      );
-
-      const appelsKeywords = pagesAleatoires.map(page =>
-        axios.get('https://api.themoviedb.org/3/discover/movie', {
-          headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-          params: {
-            language: 'fr-FR',
-            with_keywords: keywordsString,
-            page: page,
-            'vote_count.gte': 10,
-            'vote_average.gte': noteMin,
-            'vote_average.lte': noteMax
-          }
-        }).catch(() => null)
-      );
-
-      appelsDiscover = [...appelsGenres, ...appelsKeywords];
-    }
-
-    const toutesLesReponses = (await Promise.all(appelsDiscover)).filter(r => r !== null);
-
-    let candidats = [];
-    for (const reponse of toutesLesReponses) {
-      candidats = [...candidats, ...reponse.data.results];
-    }
-
-    const idsVus = new Set();
-    candidats = candidats.filter(film => {
-      if (idsVus.has(film.id)) return false;
-      if (idsExclus.includes(film.id)) return false;
-      idsVus.add(film.id);
-      return true;
-    });
-
-    if (candidats.length === 0) {
-      return res.status(404).json({ error: 'Aucun film trouvé pour ces critères' });
-    }
-
-    candidats = candidats.sort(() => Math.random() - 0.5);
-
-    let lotFinal = [];
-
-    if (!filtreDureeActif) {
-      // Pas de filtre durée : pas besoin d'appel détail, on utilise direct les données du discover
-      lotFinal = candidats.slice(0, tailleLot).map(film => ({
-        id: film.id,
-        title: film.title,
-        year: film.release_date ? film.release_date.slice(0, 4) : '',
-        overview: film.overview,
-        posterUrl: `https://image.tmdb.org/t/p/w500${film.poster_path}`,
-        runtime: null,
-        genres: film.genre_ids.map(id => genresTMDB[id]).filter(Boolean),
-        rating: film.vote_average / 2
-      }));
-    } else {
-      // Filtre durée actif : là on a besoin de l'appel détail pour connaître le runtime
-      const candidatsAExaminer = candidats.slice(0, 15);
-
-      const reponsesDetail = await Promise.all(
-        candidatsAExaminer.map(candidat =>
-          axios.get(`https://api.themoviedb.org/3/movie/${candidat.id}`, {
-            headers: { Authorization: `Bearer ${process.env.TMDB_TOKEN}` },
-            params: { language: 'fr-FR' }
-          }).catch(() => null)
-        )
-      );
-
-      for (const reponseDetail of reponsesDetail) {
-        if (lotFinal.length >= tailleLot) break;
-        if (!reponseDetail) continue;
-
-        const filmDetail = reponseDetail.data;
-        const runtime = filmDetail.runtime;
-
-        const respecteMin = dureeMin ? runtime >= dureeMin : true;
-        const respecteMax = dureeMax ? runtime <= dureeMax : true;
-
-        if (respecteMin && respecteMax) {
-          lotFinal.push({
-            id: filmDetail.id,
-            title: filmDetail.title,
-            year: filmDetail.release_date.slice(0, 4),
-            overview: filmDetail.overview,
-            posterUrl: `https://image.tmdb.org/t/p/w500${filmDetail.poster_path}`,
-            runtime: filmDetail.runtime,
-            genres: filmDetail.genres.map(g => g.name),
-            rating: filmDetail.vote_average / 2
-          });
-        }
-      }
-    }
+    const lotFinal = resultat.rows.map(film => ({
+      id: film.id,
+      title: film.title,
+      year: film.year,
+      overview: film.overview,
+      posterUrl: `https://image.tmdb.org/t/p/w500${film.poster_path}`,
+      runtime: film.runtime,
+      genres: (film.genre_ids || []).map(id => genresTMDB[id]).filter(Boolean),
+      rating: parseFloat(film.rating),
+      platforms: film.platforms || []
+    }));
 
     res.json(lotFinal);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Erreur lors de l\'appel à TMDB' });
+    res.status(500).json({ error: 'Erreur lors de la lecture de la base' });
   }
 });
 

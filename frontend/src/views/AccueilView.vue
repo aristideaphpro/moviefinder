@@ -9,6 +9,9 @@ const etapeActuelle = ref(0);
 const moodChoisi = ref(null);
 const noteChoisie = ref(null);
 const dureeChoisie = ref(null);
+const plateformesChoisies = ref([]);
+const decenniesChoisies = ref([]);
+const popuChoisie = ref('peuImporte');
 
 const tranchesNote = {
   peuImporte: { min: 0, max: 5 },
@@ -22,6 +25,12 @@ const tranchesDuree = {
   court: { min: null, max: 100 },
   normal: { min: 100, max: 150 },
   long: { min: 150, max: null }
+};
+
+const seuilsPopu = {
+  peuImporte: null,
+  connus: 20,
+  tresPopulaires: 50
 };
 
 const moods = [
@@ -48,18 +57,62 @@ const durees = [
   { value: 'long', label: 'Long (plus de 2h30)' }
 ];
 
+const plateformesDisponibles = [
+  { value: 'Netflix', label: 'Netflix' },
+  { value: 'Disney Plus', label: 'Disney+' },
+  { value: 'Amazon Prime Video', label: 'Prime Video' },
+  { value: 'Apple TV Plus', label: 'Apple TV+' },
+  { value: 'Canal+', label: 'Canal+' },
+  { value: 'Paramount Plus', label: 'Paramount+' },
+  { value: 'Max', label: 'Max (ex HBO)' },
+  { value: 'MUBI', label: 'Mubi' },
+  { value: 'Crunchyroll', label: 'Crunchyroll' }
+];
+
+const decenniesDisponibles = [
+  { value: 1970, label: '70s' },
+  { value: 1980, label: '80s' },
+  { value: 1990, label: '90s' },
+  { value: 2000, label: '2000s' },
+  { value: 2010, label: '2010s' },
+  { value: 2020, label: '2020s' }
+];
+
+const popularites = [
+  { value: 'peuImporte', label: 'Peu importe' },
+  { value: 'connus', label: 'Films connus' },
+  { value: 'tresPopulaires', label: 'Uniquement les plus populaires' }
+];
+
 const etapes = [
-  { titre: 'Ton mood ce soir ?', options: moods, modele: moodChoisi },
-  { titre: 'T\'attends quoi niveau qualité ?', options: notes, modele: noteChoisie },
-  { titre: 'Combien de temps t\'as devant toi ?', options: durees, modele: dureeChoisie }
+  { titre: 'Ton mood ce soir ?', type: 'single', options: moods, modele: moodChoisi },
+  { titre: 'T\'attends quoi niveau qualité ?', type: 'single', options: notes, modele: noteChoisie },
+  { titre: 'Combien de temps t\'as devant toi ?', type: 'single', options: durees, modele: dureeChoisie },
+  { titre: 'Une époque en tête ? (facultatif)', type: 'multi', options: decenniesDisponibles, modele: decenniesChoisies },
+  { titre: 'Plutôt connu ou déterré ?', type: 'single', options: popularites, modele: popuChoisie },
+  { titre: 'Tes plateformes (facultatif)', type: 'multi', options: plateformesDisponibles, modele: plateformesChoisies }
 ];
 
 const etape = computed(() => etapes[etapeActuelle.value]);
 const derniereEtape = computed(() => etapeActuelle.value === etapes.length - 1);
-const peutAvancer = computed(() => etape.value.modele.value !== null);
 
-function choisir(valeur) {
+const peutAvancer = computed(() => {
+  if (etape.value.type === 'multi') return true;
+  return etape.value.modele.value !== null;
+});
+
+function choisirSingle(valeur) {
   etape.value.modele.value = valeur;
+}
+
+function toggleMulti(valeur) {
+  const liste = etape.value.modele;
+  const index = liste.value.indexOf(valeur);
+  if (index === -1) {
+    liste.value.push(valeur);
+  } else {
+    liste.value.splice(index, 1);
+  }
 }
 
 function suivant() {
@@ -78,6 +131,7 @@ function precedent() {
 function commencerRecherche() {
   const note = tranchesNote[noteChoisie.value];
   const duree = tranchesDuree[dureeChoisie.value];
+  const popuMin = seuilsPopu[popuChoisie.value];
 
   router.push({
     name: 'resultats',
@@ -86,7 +140,10 @@ function commencerRecherche() {
       noteMin: note.min,
       noteMax: note.max,
       dureeMin: duree.min,
-      dureeMax: duree.max
+      dureeMax: duree.max,
+      plateformes: plateformesChoisies.value.join(','),
+      decennies: decenniesChoisies.value.join(','),
+      popuMin: popuMin
     }
   });
 }
@@ -105,13 +162,25 @@ function commencerRecherche() {
 
     <h1 class="titre">{{ etape.titre }}</h1>
 
-    <div class="options">
+    <div v-if="etape.type === 'single'" class="options">
       <button
         v-for="opt in etape.options"
         :key="opt.value"
         class="option"
         :class="{ selectionne: etape.modele.value === opt.value }"
-        @click="choisir(opt.value)"
+        @click="choisirSingle(opt.value)"
+      >
+        {{ opt.label }}
+      </button>
+    </div>
+
+    <div v-else class="options-multi">
+      <button
+        v-for="opt in etape.options"
+        :key="opt.value"
+        class="chip"
+        :class="{ selectionne: etape.modele.value.includes(opt.value) }"
+        @click="toggleMulti(opt.value)"
       >
         {{ opt.label }}
       </button>
@@ -147,6 +216,7 @@ function commencerRecherche() {
   gap: 8px;
   justify-content: center;
   margin-bottom: 40px;
+  flex-wrap: wrap;
 }
 
 .point {
@@ -196,6 +266,31 @@ function commencerRecherche() {
 }
 
 .option.selectionne {
+  border-color: #00e054;
+  color: #ffffff;
+  background: #1a2620;
+}
+
+.options-multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1;
+  align-content: flex-start;
+}
+
+.chip {
+  background: #1c2228;
+  border: 1px solid #2c3440;
+  color: #9ab;
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.chip.selectionne {
   border-color: #00e054;
   color: #ffffff;
   background: #1a2620;

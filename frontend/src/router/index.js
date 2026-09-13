@@ -14,6 +14,11 @@ const router = createRouter({
       path: '/resultats',
       name: 'resultats',
       component: ResultatsView
+    },
+    {
+      path: '/cote',
+      name: 'cote',
+      component: () => import('../views/CoteView.vue')
     }
   ],
 })
