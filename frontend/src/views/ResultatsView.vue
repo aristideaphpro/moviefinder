@@ -3,6 +3,8 @@ import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
+const API_BASE = import.meta.env.DEV ? 'http://localhost:3000' : '';
+
 const route = useRoute();
 const router = useRouter();
 
@@ -25,7 +27,6 @@ const origineX = ref(0);
 const origineY = ref(0);
 const directionSortie = ref(null);
 
-// --- Panneau de filtres ---
 const tranchesNote = {
   peuImporte: { min: 0, max: 5 },
   mauvais: { min: 0, max: 2.8 },
@@ -157,7 +158,6 @@ async function appliquerFiltres() {
   await chargerPremierLot();
 }
 
-// --- Logique existante ---
 function lireCoteValide() {
   const brut = localStorage.getItem('moviefinder_cote');
   const liste = brut ? JSON.parse(brut) : [];
@@ -212,7 +212,7 @@ async function chargerLotSiBesoin() {
   chargementEnCours.value = true;
   try {
     while (filmsRestants() < RESERVE_CIBLE) {
-      const response = await axios.get('http://localhost:3000/lot-de-films', {
+      const response = await axios.get(`${API_BASE}/lot-de-films`, {
         params: criteresRecherche()
       });
       if (response.data.length === 0) break;
@@ -227,7 +227,7 @@ async function chargerLotSiBesoin() {
 
 async function chargerPremierLot() {
   try {
-    const response = await axios.get('http://localhost:3000/lot-de-films', {
+    const response = await axios.get(`${API_BASE}/lot-de-films`, {
       params: criteresRecherche()
     });
     films.value = response.data;
@@ -322,7 +322,7 @@ const platformsAffiches = computed(() => {
   if (!films.value[indexActuel.value]) return [];
   const brut = films.value[indexActuel.value].platforms || [];
   const normalisees = brut.map(normaliserPlateforme);
-  return [...new Set(normalisees)].slice(0, 3); // Set = supprime les doublons après normalisation
+  return [...new Set(normalisees)].slice(0, 3);
 });
 
 onMounted(async () => {
