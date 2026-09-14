@@ -65,7 +65,7 @@ onMounted(chargerCote);
   overflow: hidden;
   background: #14181c;
   color: #ffffff;
-  padding: 24px 16px 32px;
+  padding: max(24px, env(safe-area-inset-top)) 20px 32px;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   box-sizing: border-box;
 }
