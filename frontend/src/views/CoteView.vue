@@ -61,7 +61,8 @@ onMounted(chargerCote);
 
 <style scoped>
 .ecran {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: #14181c;
   color: #ffffff;
   padding: 24px 16px 32px;

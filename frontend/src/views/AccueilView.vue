@@ -201,11 +201,13 @@ function commencerRecherche() {
 
 <style scoped>
 .ecran {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: #14181c;
   color: #ffffff;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   padding: 24px 20px 32px;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   box-sizing: border-box;

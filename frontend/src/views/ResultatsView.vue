@@ -468,12 +468,14 @@ onMounted(async () => {
 
 <style scoped>
 .ecran {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background: #14181c;
   color: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 24px 16px 32px;
   font-family: 'Helvetica Neue', Arial, sans-serif;
   box-sizing: border-box;
